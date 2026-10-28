@@ -83,4 +83,10 @@ public class SaleServiceImpl implements SaleService {
     public List<Sale> getAllSales() {
         return saleRepository.findAll();
     }
+
+    @Override
+    public List<Sale> getSalesBetween(LocalDateTime start, LocalDateTime end) {
+        return saleRepository
+                .findBySoldAtGreaterThanEqualAndSoldAtLessThan(start, end);
+    }
 }

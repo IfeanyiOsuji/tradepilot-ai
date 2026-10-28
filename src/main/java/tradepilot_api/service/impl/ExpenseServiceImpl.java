@@ -89,4 +89,10 @@ public class ExpenseServiceImpl implements ExpenseService {
     public List<Expense> getAllExpenses() {
         return expenseRepository.findAll();
     }
+
+    @Override
+    public List<Expense> getExpensesBetween(LocalDateTime start, LocalDateTime end) {
+        return expenseRepository
+                .findByIncurredAtGreaterThanEqualAndIncurredAtLessThan(start, end);
+    }
 }

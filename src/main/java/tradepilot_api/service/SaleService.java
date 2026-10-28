@@ -18,4 +18,8 @@ public interface SaleService {
             LocalDateTime soldAt
     );
     public List<Sale> getAllSales();
+
+    public List<Sale> getSalesBetween(
+            LocalDateTime start,
+            LocalDateTime end);
 }

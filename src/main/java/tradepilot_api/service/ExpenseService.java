@@ -18,4 +18,7 @@ public interface ExpenseService {
     );
 
     public List<Expense> getAllExpenses();
+    public List<Expense> getExpensesBetween(
+            LocalDateTime start,
+            LocalDateTime end);
 }
