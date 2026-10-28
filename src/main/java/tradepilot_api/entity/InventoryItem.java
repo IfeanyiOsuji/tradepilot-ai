@@ -75,4 +75,7 @@ public class InventoryItem {
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
+    public void updateQuantityInStock(BigDecimal quantityInStock) {
+        this.quantityInStock = quantityInStock;
+    }
 }
