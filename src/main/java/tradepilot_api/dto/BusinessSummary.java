@@ -1,4 +1,11 @@
 package tradepilot_api.dto;
 
-public class BusinessSummary {
+import java.math.BigDecimal;
+
+public record BusinessSummary (
+        String currency,
+        BigDecimal totalRevenue,
+        BigDecimal totalExpenses,
+        BigDecimal netCashFlow
+) {
 }
