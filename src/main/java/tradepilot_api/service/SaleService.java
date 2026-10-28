@@ -1,6 +1,7 @@
 package tradepilot_api.service;
 
 import org.springframework.stereotype.Service;
+import tradepilot_api.dto.InventorySaleRequest;
 import tradepilot_api.entity.Sale;
 
 import java.math.BigDecimal;
@@ -9,7 +10,7 @@ import java.util.List;
 
 @Service
 public interface SaleService {
-    public Sale recordSale(
+     Sale recordSale(
             String itemName,
             String saleType,
             BigDecimal quantity,
@@ -17,9 +18,12 @@ public interface SaleService {
             String currency,
             LocalDateTime soldAt
     );
-    public List<Sale> getAllSales();
 
-    public List<Sale> getSalesBetween(
+    List<Sale> getAllSales();
+
+     List<Sale> getSalesBetween(
             LocalDateTime start,
             LocalDateTime end);
+
+    Sale recordInventorySale(InventorySaleRequest request);
 }

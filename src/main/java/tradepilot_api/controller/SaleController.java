@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import tradepilot_api.dto.InventorySaleRequest;
 import tradepilot_api.dto.SaleRequest;
 import tradepilot_api.entity.Sale;
 import tradepilot_api.service.SaleService;
@@ -34,5 +35,14 @@ public class SaleController {
     public List<Sale> getAllSales() {
         return saleService.getAllSales();
     }
+
+
+    @PostMapping("/from-inventory")
+    public Sale recordInventorySale(
+            @Valid @RequestBody InventorySaleRequest request
+    ) {
+        return saleService.recordInventorySale(request);
+    }
+
 
 }
