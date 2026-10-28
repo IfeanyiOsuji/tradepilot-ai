@@ -15,13 +15,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import static tradepilot_api.utils.TradeUtil.SUPPORTED_CURRENCIES;
+
 @Service
 
 @AllArgsConstructor
 public class SaleServiceImpl implements SaleService {
 
-    private static final Set<String> SUPPORTED_CURRENCIES =
-            Set.of("NGN", "USD", "GBP", "EUR", "CAD", "AUD", "GHS", "KES", "ZAR");
+
 
     private final SaleRepository saleRepository;
 
