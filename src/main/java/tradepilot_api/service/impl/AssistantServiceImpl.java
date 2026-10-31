@@ -9,6 +9,7 @@ import tradepilot_api.dto.*;
 import tradepilot_api.entity.InventoryItem;
 import tradepilot_api.service.*;
 import tradepilot_api.service.ai.MetaAiClient;
+import tradepilot_api.utils.CurrencyFormatter;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -109,15 +110,22 @@ public class AssistantServiceImpl implements AssistantService {
                     + recommendations.stream()
                     .map(item -> item.productName()
                             + " (SKU: " + item.sku()
-                            + ") - current stock: "
+                            + ") - Current stock: "
                             + item.quantityInStock().toPlainString()
-                            + ", target stock: "
+                            + ", Target stock: "
                             + item.targetStockLevel().toPlainString()
-                            + ", recommended restock: "
+                            + ", Recommended restock: "
                             + item.recommendedRestockQuantity().toPlainString()
-                            + ", estimated cost: "
-                            + item.currency() + " "
-                            + item.estimatedRestockCost().toPlainString())
+                            + ", Unit cost: "
+                            + CurrencyFormatter.format(
+                            item.unitCost(),
+                            item.currency()
+                    )
+                            + ", Estimated restock cost: "
+                            + CurrencyFormatter.format(
+                            item.estimatedRestockCost(),
+                            item.currency()
+                    ))
                     .collect(Collectors.joining("\n"));
         }
 
@@ -138,7 +146,6 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of()
         );
     }
-
     private AssistantResponse answerFinancialQuestion(
             String originalQuestion,
             String question,
@@ -206,8 +213,15 @@ public class AssistantServiceImpl implements AssistantService {
                             + " - Quantity sold: "
                             + item.totalQuantitySold().toPlainString()
                             + ", Revenue: "
-                            + item.currency() + " "
-                            + item.totalRevenue().toPlainString())
+                            + CurrencyFormatter.format(
+                            item.totalRevenue(),
+                            item.currency()
+                    )
+                            + ", Average selling price: "
+                            + CurrencyFormatter.format(
+                            item.averageSellingPrice(),
+                            item.currency()
+                    ))
                     .collect(Collectors.joining("\n"));
         }
 
@@ -228,7 +242,6 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of()
         );
     }
-
     private AssistantResponse answerInventoryValuationQuestion(String question) {
 
         List<InventoryValuationResponse> valuations =
@@ -243,11 +256,20 @@ public class AssistantServiceImpl implements AssistantService {
                     + valuations.stream()
                     .map(item -> "Currency: " + item.currency()
                             + "\nTotal cost value: "
-                            + item.totalCostValue().toPlainString()
+                            + CurrencyFormatter.format(
+                            item.totalCostValue(),
+                            item.currency()
+                    )
                             + "\nTotal retail value: "
-                            + item.totalRetailValue().toPlainString()
+                            + CurrencyFormatter.format(
+                            item.totalRetailValue(),
+                            item.currency()
+                    )
                             + "\nPotential gross margin: "
-                            + item.potentialGrossMargin().toPlainString()
+                            + CurrencyFormatter.format(
+                            item.potentialGrossMargin(),
+                            item.currency()
+                    )
                             + "\nProduct count: "
                             + item.productCount()
                             + "\nTotal quantity in stock: "
@@ -275,8 +297,8 @@ public class AssistantServiceImpl implements AssistantService {
 
     private String buildInventoryValuationPrompt(
             String question,
-            List<InventoryValuationResponse> valuations
-    ) {
+            List<InventoryValuationResponse> valuations) {
+
         String valuationData = valuations.isEmpty()
                 ? "No inventory valuation data is available."
                 : valuations.stream()
@@ -289,9 +311,18 @@ public class AssistantServiceImpl implements AssistantService {
                     Total quantity in stock: %s
                     """.formatted(
                         item.currency(),
-                        item.totalCostValue().toPlainString(),
-                        item.totalRetailValue().toPlainString(),
-                        item.potentialGrossMargin().toPlainString(),
+                        CurrencyFormatter.format(
+                                item.totalCostValue(),
+                                item.currency()
+                        ),
+                        CurrencyFormatter.format(
+                                item.totalRetailValue(),
+                                item.currency()
+                        ),
+                        CurrencyFormatter.format(
+                                item.potentialGrossMargin(),
+                                item.currency()
+                        ),
                         item.productCount(),
                         item.totalQuantityInStock().toPlainString()
                 ))
@@ -309,12 +340,16 @@ public class AssistantServiceImpl implements AssistantService {
             Instructions:
             - Answer using only the supplied inventory valuation data.
             - Do not invent financial figures.
-            - Do not calculate or modify the supplied figures.
+            - Do not calculate, recalculate, or modify supplied figures.
+            - Preserve the exact amounts and currency codes supplied.
+            - Use the supplied formatted monetary amounts exactly as written.
+            - Do not remove currency symbols or thousands separators.
             - Explain that total cost value represents the cost of current stock.
-            - Explain that total retail value represents the potential selling value
-              of current stock at listed selling prices.
+            - Explain that total retail value represents the potential selling
+              value of current stock at listed selling prices.
             - Explain that potential gross margin is not realized profit.
             - Keep different currencies separate. Never combine different currencies.
+            - Keep the answer concise and relevant to the user's question.
             """.formatted(question, valuationData);
     }
 
@@ -334,49 +369,60 @@ public class AssistantServiceImpl implements AssistantService {
             data.append("No recorded business transactions were found.");
         } else {
             for (BusinessSummary summary : summaries) {
+
                 data.append("\nCurrency: ")
                         .append(summary.currency());
 
                 data.append("\nTotal revenue: ")
-                        .append(summary.totalRevenue().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                summary.totalRevenue(),
+                                summary.currency()
+                        ));
 
                 data.append("\nTotal expenses: ")
-                        .append(summary.totalExpenses().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                summary.totalExpenses(),
+                                summary.currency()
+                        ));
 
                 data.append("\nNet cash flow: ")
-                        .append(summary.netCashFlow().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                summary.netCashFlow(),
+                                summary.currency()
+                        ));
 
                 data.append("\n");
             }
         }
 
         return """
-                You are TradePilot AI, a helpful business assistant
-                for small businesses.
+            You are TradePilot AI, a helpful business assistant
+            for small businesses.
 
-                Answer the user's business question using only the
-                business data supplied below.
+            Answer the user's business question using only the
+            business data supplied below.
 
-                STRICT RULES:
-                1. Never invent or estimate financial figures.
-                2. Never change any supplied numerical values.
-                3. Do not perform your own financial calculations.
-                4. If data is missing, clearly say so.
-                5. Distinguish net cash flow from accounting profit.
-                6. Do not describe net cash flow as profit.
-                7. Use the currency provided with each figure.
-                8. Give a clear, concise and useful explanation.
-                9. Do not claim access to information not supplied.
+            STRICT RULES:
+            1. Never invent or estimate financial figures.
+            2. Never change any supplied numerical values.
+            3. Do not perform your own financial calculations.
+            4. Preserve the exact formatted monetary amounts supplied.
+            5. Do not remove currency symbols or thousands separators.
+            6. If data is missing, clearly say so.
+            7. Distinguish net cash flow from accounting profit.
+            8. Do not describe net cash flow as profit.
+            9. Use the currency provided with each figure.
+            10. Give a clear, concise and useful explanation.
+            11. Do not claim access to information not supplied.
 
-                User's question:
-                %s
+            User's question:
+            %s
 
-                %s
+            %s
 
-                Provide a natural-language answer to the user's question.
-                """.formatted(question, data);
+            Provide a natural-language answer to the user's question.
+            """.formatted(question, data);
     }
-
     private String buildBestSellingPrompt(
             String question,
             List<ProductPerformanceResponse> products) {
@@ -387,6 +433,7 @@ public class AssistantServiceImpl implements AssistantService {
             data.append("No inventory-linked product sales have been recorded.");
         } else {
             for (ProductPerformanceResponse product : products) {
+
                 data.append("\nProduct: ").append(product.productName());
 
                 data.append("\nSKU: ").append(product.sku());
@@ -395,14 +442,16 @@ public class AssistantServiceImpl implements AssistantService {
                         .append(product.totalQuantitySold().toPlainString());
 
                 data.append("\nTotal revenue: ")
-                        .append(product.currency())
-                        .append(" ")
-                        .append(product.totalRevenue().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                product.totalRevenue(),
+                                product.currency()
+                        ));
 
                 data.append("\nAverage selling price: ")
-                        .append(product.currency())
-                        .append(" ")
-                        .append(product.averageSellingPrice().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                product.averageSellingPrice(),
+                                product.currency()
+                        ));
 
                 data.append("\nLast sold at: ")
                         .append(product.lastSoldAt());
@@ -422,13 +471,16 @@ public class AssistantServiceImpl implements AssistantService {
             1. Never invent products, sales quantities, or revenue figures.
             2. Never change the supplied numerical values.
             3. Do not calculate or modify sales figures.
-            4. Use the currency provided with each monetary amount.
-            5. Distinguish quantity sold from revenue generated.
-            6. Identify the best-selling products using the supplied data.
-            7. If no products are listed, clearly say no inventory-linked
+            4. Preserve the exact formatted monetary amounts supplied.
+            5. Do not remove currency symbols or thousands separators.
+            6. Use the currency provided with each monetary amount.
+            7. Distinguish quantity sold from revenue generated.
+            8. Identify the best-selling products using the supplied data.
+            9. If no products are listed, clearly say no inventory-linked
                product sales have been recorded.
-            8. Do not claim access to sales records not supplied.
-            9. Keep the answer clear and concise.
+            10. Do not claim access to sales records not supplied.
+            11. Keep the answer clear and concise.
+            12. Never combine amounts from different currencies.
 
             User's question:
             %s
@@ -458,11 +510,20 @@ public class AssistantServiceImpl implements AssistantService {
                     .map(summary ->
                             summary.currency()
                                     + " - Revenue: "
-                                    + summary.totalRevenue().toPlainString()
+                                    + CurrencyFormatter.format(
+                                    summary.totalRevenue(),
+                                    summary.currency()
+                            )
                                     + ", Expenses: "
-                                    + summary.totalExpenses().toPlainString()
+                                    + CurrencyFormatter.format(
+                                    summary.totalExpenses(),
+                                    summary.currency()
+                            )
                                     + ", Net cash flow: "
-                                    + summary.netCashFlow().toPlainString()
+                                    + CurrencyFormatter.format(
+                                    summary.netCashFlow(),
+                                    summary.currency()
+                            )
                     )
                     .collect(Collectors.joining("\n"));
         }
@@ -477,18 +538,17 @@ public class AssistantServiceImpl implements AssistantService {
         return label + " " + period + ":\n"
                 + summaries.stream()
                 .map(summary -> summary.currency() + " "
-                        + switch (intent) {
-                    case "REVENUE" ->
-                            summary.totalRevenue().toPlainString();
-                    case "EXPENSES" ->
-                            summary.totalExpenses().toPlainString();
-                    case "NET_CASH_FLOW" ->
-                            summary.netCashFlow().toPlainString();
-                    default -> "0";
-                })
+                        + CurrencyFormatter.format(
+                        switch (intent) {
+                            case "REVENUE" -> summary.totalRevenue();
+                            case "EXPENSES" -> summary.totalExpenses();
+                            case "NET_CASH_FLOW" -> summary.netCashFlow();
+                            default -> java.math.BigDecimal.ZERO;
+                        },
+                        summary.currency()
+                ))
                 .collect(Collectors.joining("\n"));
     }
-
     private AssistantResponse answerLowStockQuestion(String question) {
 
         List<LowStockItemResponse> lowStockItems =
@@ -858,7 +918,9 @@ public class AssistantServiceImpl implements AssistantService {
             data.append("No products currently require restocking.");
         } else {
             for (RestockRecommendationResponse item : recommendations) {
+
                 data.append("\nProduct: ").append(item.productName());
+
                 data.append("\nSKU: ").append(item.sku());
 
                 data.append("\nCurrent stock: ")
@@ -874,14 +936,16 @@ public class AssistantServiceImpl implements AssistantService {
                         .append(item.recommendedRestockQuantity().toPlainString());
 
                 data.append("\nUnit cost: ")
-                        .append(item.currency())
-                        .append(" ")
-                        .append(item.unitCost().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                item.unitCost(),
+                                item.currency()
+                        ));
 
                 data.append("\nEstimated restock cost: ")
-                        .append(item.currency())
-                        .append(" ")
-                        .append(item.estimatedRestockCost().toPlainString());
+                        .append(CurrencyFormatter.format(
+                                item.estimatedRestockCost(),
+                                item.currency()
+                        ));
 
                 data.append("\n");
             }
@@ -898,11 +962,14 @@ public class AssistantServiceImpl implements AssistantService {
             1. Never invent products, quantities, or prices.
             2. Never change the supplied numerical values.
             3. Do not calculate or modify restock quantities or costs.
-            4. Use the supplied currency for every monetary amount.
-            5. Explain the recommended restock quantities clearly.
-            6. If no products are listed, say no restocking is currently recommended.
-            7. Do not claim that a purchase order has been created or placed.
-            8. Keep the answer concise and practical.
+            4. Preserve the exact formatted monetary amounts supplied.
+            5. Do not remove currency symbols or thousands separators.
+            6. Use the supplied currency for every monetary amount.
+            7. Explain the recommended restock quantities clearly.
+            8. If no products are listed, say no restocking is currently recommended.
+            9. Do not claim that a purchase order has been created or placed.
+            10. Keep the answer concise and practical.
+            11. Never combine amounts from different currencies.
 
             User's question:
             %s
@@ -913,7 +980,6 @@ public class AssistantServiceImpl implements AssistantService {
             Provide a natural-language answer.
             """.formatted(question, data);
     }
-
     private record DateRange(
             LocalDate startDate,
             LocalDate endDate,
