@@ -15,7 +15,8 @@ public interface InventoryService {
             BigDecimal unitCost,
             BigDecimal sellingPrice,
             String currency,
-            BigDecimal lowStockThreshold);
+            BigDecimal lowStockThreshold,
+            BigDecimal targetStockLevel);
 
     List<InventoryItem> getAllInventoryItems();
     InventoryItem getInventoryItemBySku(String sku);

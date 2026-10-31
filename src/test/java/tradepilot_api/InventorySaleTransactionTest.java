@@ -59,7 +59,7 @@ public class InventorySaleTransactionTest {
                 savedItem.getId(),
                 new BigDecimal("6"),
                 new BigDecimal("25000"),
-                LocalDateTime.now()
+                LocalDateTime.now(),
         );
 
         assertThrows(

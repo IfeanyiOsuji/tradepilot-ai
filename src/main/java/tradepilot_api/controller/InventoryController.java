@@ -26,7 +26,8 @@ public class InventoryController {
                 request.unitCost(),
                 request.sellingPrice(),
                 request.currency(),
-                request.lowStockThreshold()
+                request.lowStockThreshold(),
+                request.targetStockLevel()
         );
     }
 

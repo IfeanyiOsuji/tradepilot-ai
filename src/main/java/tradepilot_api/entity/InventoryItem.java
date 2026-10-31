@@ -47,6 +47,9 @@ public class InventoryItem {
     @Column(nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(precision = 19, scale = 4)
+    private BigDecimal targetStockLevel;
+
     public InventoryItem(
             String productName,
             String sku,
@@ -54,7 +57,8 @@ public class InventoryItem {
             BigDecimal unitCost,
             BigDecimal sellingPrice,
             String currency,
-            BigDecimal lowStockThreshold) {
+            BigDecimal lowStockThreshold,
+            BigDecimal targetStockLevel) {
 
         this.productName = productName;
         this.sku = sku;
@@ -63,6 +67,7 @@ public class InventoryItem {
         this.sellingPrice = sellingPrice;
         this.currency = currency;
         this.lowStockThreshold = lowStockThreshold;
+        this.targetStockLevel = targetStockLevel;
     }
     @PrePersist
     protected void onCreate() {

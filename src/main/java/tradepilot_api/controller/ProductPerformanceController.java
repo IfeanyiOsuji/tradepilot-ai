@@ -10,9 +10,11 @@ import org.springframework.web.bind.annotation.RestController;
 import tradepilot_api.dto.InactiveProductResponse;
 import tradepilot_api.dto.InventoryValuationResponse;
 import tradepilot_api.dto.ProductPerformanceResponse;
+import tradepilot_api.dto.RestockRecommendationResponse;
 import tradepilot_api.service.InventoryAnalyticsService;
 import tradepilot_api.service.InventoryValuationService;
 import tradepilot_api.service.ProductPerformanceService;
+import tradepilot_api.service.RestockRecommendationService;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -25,6 +27,7 @@ public class ProductPerformanceController {
     private final ProductPerformanceService productPerformanceService;
     private final InventoryAnalyticsService inventoryAnalyticsService;
     private final InventoryValuationService inventoryValuationService;
+    private final RestockRecommendationService restockRecommendationService;
 
     @GetMapping("/performance")
     public List<ProductPerformanceResponse> getProductPerformance(
@@ -57,6 +60,11 @@ public class ProductPerformanceController {
     public List<InventoryValuationResponse> getInventoryValuation() {
 
         return inventoryValuationService.getInventoryValuation();
+    }
+
+    @GetMapping("/restock-recommendations")
+    public List<RestockRecommendationResponse> getRestockRecommendations() {
+        return restockRecommendationService.getRestockRecommendations();
     }
 
 }

@@ -31,7 +31,11 @@ public record InventoryRequest(
 
         @NotNull(message = "Low-stock threshold is required")
         @PositiveOrZero(message = "Low-stock threshold cannot be negative")
-        BigDecimal lowStockThreshold
+        BigDecimal lowStockThreshold,
+
+        @NotNull(message = "Target stock level is required")
+        @DecimalMin(value = "0.0", message = "Target stock level cannot be negative")
+        BigDecimal targetStockLevel
 ) {
 
 }

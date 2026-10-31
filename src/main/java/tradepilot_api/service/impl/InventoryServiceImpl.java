@@ -22,7 +22,7 @@ public class InventoryServiceImpl implements InventoryService {
 
     @Transactional
     @Override
-    public InventoryItem createInventoryItem(String productName, String sku, BigDecimal quantityInStock, BigDecimal unitCost, BigDecimal sellingPrice, String currency, BigDecimal lowStockThreshold) {
+    public InventoryItem createInventoryItem(String productName, String sku, BigDecimal quantityInStock, BigDecimal unitCost, BigDecimal sellingPrice, String currency, BigDecimal lowStockThreshold, BigDecimal targetStockLevel) {
 
 
         if (productName == null || productName.isBlank()) {
@@ -98,6 +98,25 @@ public class InventoryServiceImpl implements InventoryService {
             );
         }
 
+        if (targetStockLevel == null ||
+                targetStockLevel.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException(
+                    "Target stock level cannot be negative."
+            );
+        }
+
+        if (targetStockLevel.compareTo(lowStockThreshold) < 0) {
+            throw new IllegalArgumentException(
+                    "Target stock level cannot be below the low-stock threshold."
+            );
+        }
+
+        if (targetStockLevel.compareTo(quantityInStock) < 0) {
+            throw new IllegalArgumentException(
+                    "Target stock level cannot be below the current stock quantity."
+            );
+        }
+
         InventoryItem item = new InventoryItem(
                 productName.trim(),
                 sku,
@@ -105,7 +124,8 @@ public class InventoryServiceImpl implements InventoryService {
                 unitCost,
                 sellingPrice,
                 currency,
-                lowStockThreshold
+                lowStockThreshold,
+                targetStockLevel
         );
 
         return inventoryRepository.save(item);
