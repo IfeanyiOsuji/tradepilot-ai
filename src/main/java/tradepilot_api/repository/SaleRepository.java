@@ -58,4 +58,22 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end
     );
+
+    @Query("""
+    SELECT
+        i.id AS inventoryItemId,
+        i.productName AS productName,
+        i.sku AS sku,
+        s.currency AS currency,
+        SUM(s.quantity) AS totalQuantitySold,
+        SUM(s.totalAmount) AS totalRevenue,
+        SUM(s.totalAmount) / SUM(s.quantity) AS averageSellingPrice,
+        MAX(s.soldAt) AS lastSoldAt
+    FROM Sale s
+    JOIN s.inventoryItem i
+    WHERE s.saleType = tradepilot_api.entity.SaleType.PRODUCT
+    GROUP BY i.id, i.productName, i.sku, s.currency
+    ORDER BY SUM(s.quantity) DESC
+    """)
+    List<ProductPerformanceProjection> findBestSellingProducts();
 }

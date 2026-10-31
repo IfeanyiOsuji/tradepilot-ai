@@ -65,4 +65,23 @@ public class ProductPerformanceServiceImpl
                 ))
                 .toList();
     }
+
+    @Override
+    public List<ProductPerformanceResponse> getBestSellingProducts() {
+
+            return saleRepository.findBestSellingProducts()
+                    .stream()
+                    .map(result -> new ProductPerformanceResponse(
+                            result.getInventoryItemId(),
+                            result.getProductName(),
+                            result.getSku(),
+                            result.getCurrency(),
+                            result.getTotalQuantitySold(),
+                            result.getTotalRevenue(),
+                            result.getAverageSellingPrice(),
+                            result.getLastSoldAt()
+                    ))
+                    .toList();
+
+    }
 }

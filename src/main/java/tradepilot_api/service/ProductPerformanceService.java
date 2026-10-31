@@ -12,4 +12,5 @@ public interface ProductPerformanceService {
             LocalDate startDate,
             LocalDate endDate
     );
+    List<ProductPerformanceResponse> getBestSellingProducts();
 }

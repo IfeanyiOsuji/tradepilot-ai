@@ -25,4 +25,43 @@ public interface InventoryRepository extends JpaRepository<InventoryItem, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM InventoryItem i WHERE i.id = :id")
     Optional<InventoryItem> findByIdForUpdate(@Param("id") Long id);
+
+
+
+    @Query("""
+    SELECT
+        i.id AS inventoryItemId,
+        i.productName AS productName,
+        i.sku AS sku,
+        i.currency AS currency,
+        i.quantityInStock AS quantityInStock,
+        i.lowStockThreshold AS lowStockThreshold,
+        MAX(s.soldAt) AS lastSoldAt
+    FROM InventoryItem i
+    LEFT JOIN Sale s
+        ON s.inventoryItem = i
+        AND s.saleType = tradepilot_api.entity.SaleType.PRODUCT
+    GROUP BY
+        i.id,
+        i.productName,
+        i.sku,
+        i.currency,
+        i.quantityInStock,
+        i.lowStockThreshold
+    ORDER BY i.productName
+""")
+    List<InactiveProductProjection> findInventoryProductsWithLastSaleDate();
+
+    @Query("""
+    SELECT
+        i.currency AS currency,
+        SUM(i.quantityInStock * i.unitCost) AS totalCostValue,
+        SUM(i.quantityInStock * i.sellingPrice) AS totalRetailValue,
+        COUNT(i.id) AS productCount,
+        SUM(i.quantityInStock) AS totalQuantityInStock
+    FROM InventoryItem i
+    GROUP BY i.currency
+    ORDER BY i.currency
+""")
+    List<InventoryValuationProjection> calculateInventoryValuation();
 }
