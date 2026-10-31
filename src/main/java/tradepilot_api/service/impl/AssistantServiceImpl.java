@@ -31,6 +31,7 @@ public class AssistantServiceImpl implements AssistantService {
     private final RestockRecommendationService restockRecommendationService;
     private final ProductPerformanceService productPerformanceService;
     private final InventoryAnalyticsService inventoryAnalyticsService;
+    private final InventoryValuationService inventoryValuationService;
 
     @Override
     public AssistantResponse answerQuestion(String message) {
@@ -72,6 +73,10 @@ public class AssistantServiceImpl implements AssistantService {
             return answerBestSellingQuestion(message);
         }
 
+        if (isInventoryValuationQuestion(question)) {
+            return answerInventoryValuationQuestion(question);
+        }
+
 
         return new AssistantResponse(
                 "I cannot answer that question yet. Try asking about "
@@ -79,6 +84,7 @@ public class AssistantServiceImpl implements AssistantService {
                 "UNSUPPORTED",
                 null,
                 null,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of(),
@@ -127,6 +133,7 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 List.of(),
                 recommendations,
+                List.of(),
                 List.of(),
                 List.of()
         );
@@ -177,6 +184,7 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 List.of(),
                 List.of(),
+                List.of(),
                 List.of()
         );
     }
@@ -216,8 +224,98 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 List.of(),
                 bestSellingProducts,
+                List.of(),
                 List.of()
         );
+    }
+
+    private AssistantResponse answerInventoryValuationQuestion(String question) {
+
+        List<InventoryValuationResponse> valuations =
+                inventoryValuationService.getInventoryValuation();
+
+        String fallbackAnswer;
+
+        if (valuations.isEmpty()) {
+            fallbackAnswer = "There is no inventory valuation data available.";
+        } else {
+            fallbackAnswer = "Your current inventory valuation:\n"
+                    + valuations.stream()
+                    .map(item -> "Currency: " + item.currency()
+                            + "\nTotal cost value: "
+                            + item.totalCostValue().toPlainString()
+                            + "\nTotal retail value: "
+                            + item.totalRetailValue().toPlainString()
+                            + "\nPotential gross margin: "
+                            + item.potentialGrossMargin().toPlainString()
+                            + "\nProduct count: "
+                            + item.productCount()
+                            + "\nTotal quantity in stock: "
+                            + item.totalQuantityInStock().toPlainString())
+                    .collect(Collectors.joining("\n\n"));
+        }
+
+        String prompt = buildInventoryValuationPrompt(question, valuations);
+
+        String answer = generateAiAnswer(prompt, fallbackAnswer);
+
+        return new AssistantResponse(
+                answer,
+                "INVENTORY_VALUATION",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                valuations
+        );
+    }
+
+    private String buildInventoryValuationPrompt(
+            String question,
+            List<InventoryValuationResponse> valuations
+    ) {
+        String valuationData = valuations.isEmpty()
+                ? "No inventory valuation data is available."
+                : valuations.stream()
+                .map(item -> """
+                    Currency: %s
+                    Total cost value: %s
+                    Total retail value: %s
+                    Potential gross margin: %s
+                    Product count: %d
+                    Total quantity in stock: %s
+                    """.formatted(
+                        item.currency(),
+                        item.totalCostValue().toPlainString(),
+                        item.totalRetailValue().toPlainString(),
+                        item.potentialGrossMargin().toPlainString(),
+                        item.productCount(),
+                        item.totalQuantityInStock().toPlainString()
+                ))
+                .collect(Collectors.joining("\n"));
+
+        return """
+            You are TradePilot AI, an AI business assistant.
+
+            The user's question:
+            %s
+
+            Verified inventory valuation data:
+            %s
+
+            Instructions:
+            - Answer using only the supplied inventory valuation data.
+            - Do not invent financial figures.
+            - Do not calculate or modify the supplied figures.
+            - Explain that total cost value represents the cost of current stock.
+            - Explain that total retail value represents the potential selling value
+              of current stock at listed selling prices.
+            - Explain that potential gross margin is not realized profit.
+            - Keep different currencies separate. Never combine different currencies.
+            """.formatted(question, valuationData);
     }
 
     private String buildFinancialPrompt(
@@ -430,6 +528,7 @@ public class AssistantServiceImpl implements AssistantService {
                 lowStockItems,
                 List.of(),
                 List.of(),
+                List.of(),
                 List.of()
         );
     }
@@ -478,7 +577,8 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 List.of(),
                 List.of(),
-                inactiveProducts
+                inactiveProducts,
+                List.of()
         );
     }
 
@@ -675,6 +775,24 @@ public class AssistantServiceImpl implements AssistantService {
                 || normalized.contains("unsold products")
                 || normalized.contains("products that don't sell")
                 || normalized.contains("products that do not sell");
+    }
+
+    private boolean isInventoryValuationQuestion(String question) {
+        String normalized = question.toLowerCase(Locale.ROOT);
+
+        return normalized.contains("inventory value")
+                || normalized.contains("value of my inventory")
+                || normalized.contains("inventory worth")
+                || normalized.contains("stock value")
+                || normalized.contains("cost value")
+                || normalized.contains("retail value")
+                || normalized.contains("potential gross margin")
+                || normalized.contains("invested in my stock")
+                || normalized.contains("invested in my current stock")
+                || normalized.contains("investment in my inventory")
+                || normalized.contains("cost of my current stock")
+                || normalized.contains("how much did i invest")
+                || normalized.contains("value of my stock");
     }
     private DateRange resolveDateRange(String question) {
 
