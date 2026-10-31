@@ -99,9 +99,11 @@ public class SaleServiceImpl implements SaleService {
                 .findBySoldAtGreaterThanEqualAndSoldAtLessThan(start, end);
     }
 
+
     @Override
     @Transactional
     public Sale recordInventorySale(InventorySaleRequest request) {
+
         InventoryItem item = inventoryRepository
                 .findById(request.inventoryItemId())
                 .orElseThrow(() -> new IllegalArgumentException(
@@ -118,11 +120,13 @@ public class SaleServiceImpl implements SaleService {
                 request.soldAt()
         );
 
+        // Link the sale to its actual inventory item.
+        sale.setInventoryItem(item);
+
         // Save the sale within the current transaction.
         Sale savedSale = saleRepository.save(sale);
 
         // Reduce stock and record the movement.
-        // StockMovementService joins this transaction.
         stockMovementService.recordSale(
                 item.getId(),
                 request.quantity(),

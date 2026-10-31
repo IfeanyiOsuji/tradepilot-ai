@@ -1,10 +1,9 @@
+
 package tradepilot_api.entity;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -40,6 +39,10 @@ public class Sale {
 
     @Column(nullable = false)
     private LocalDateTime soldAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inventory_item_id")
+    private InventoryItem inventoryItem;
 
     public Sale(
             String itemName,
