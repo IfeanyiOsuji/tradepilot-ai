@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+import static tradepilot_api.utils.TradeUtil.extractInactivityDays;
+
 @Service
 @RequiredArgsConstructor
 public class AssistantServiceImpl implements AssistantService {
@@ -28,6 +30,7 @@ public class AssistantServiceImpl implements AssistantService {
     private final MetaAiClient metaAiClient;
     private final RestockRecommendationService restockRecommendationService;
     private final ProductPerformanceService productPerformanceService;
+    private final InventoryAnalyticsService inventoryAnalyticsService;
 
     @Override
     public AssistantResponse answerQuestion(String message) {
@@ -43,7 +46,9 @@ public class AssistantServiceImpl implements AssistantService {
         if (isLowStockQuestion(question)) {
             return answerLowStockQuestion(message);
         }
-
+        if (isInactiveProductsQuestion(question)) {
+            return answerInactiveProductsQuestion(question);
+        }
         if (isRevenueQuestion(question)) {
             return answerFinancialQuestion(message, question, "REVENUE");
         }
@@ -67,12 +72,14 @@ public class AssistantServiceImpl implements AssistantService {
             return answerBestSellingQuestion(message);
         }
 
+
         return new AssistantResponse(
                 "I cannot answer that question yet. Try asking about "
                         + "revenue, expenses, net cash flow, or low-stock products.",
                 "UNSUPPORTED",
                 null,
                 null,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of(),
@@ -120,6 +127,7 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 List.of(),
                 recommendations,
+                List.of(),
                 List.of()
         );
     }
@@ -168,6 +176,7 @@ public class AssistantServiceImpl implements AssistantService {
                 summaries,
                 List.of(),
                 List.of(),
+                List.of(),
                 List.of()
         );
     }
@@ -206,7 +215,8 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 List.of(),
                 List.of(),
-                bestSellingProducts
+                bestSellingProducts,
+                List.of()
         );
     }
 
@@ -419,7 +429,56 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of(),
                 lowStockItems,
                 List.of(),
+                List.of(),
                 List.of()
+        );
+    }
+
+    private AssistantResponse answerInactiveProductsQuestion(String question) {
+
+        int days = extractInactivityDays(question);
+
+        List<InactiveProductResponse> inactiveProducts =
+                inventoryAnalyticsService.getInactiveProducts(days);
+
+        String fallbackAnswer;
+
+        if (inactiveProducts.isEmpty()) {
+            fallbackAnswer = "There are no products that have been inactive "
+                    + "for the last " + days + " days.";
+        } else {
+            fallbackAnswer = "Found " + inactiveProducts.size()
+                    + " inactive product(s) in the last " + days + " days:\n"
+                    + inactiveProducts.stream()
+                    .map(item -> item.productName()
+                            + " (SKU: " + item.sku()
+                            + ") - stock: "
+                            + item.quantityInStock().toPlainString()
+                            + ", last sold: "
+                            + (item.neverSold()
+                            ? "Never sold"
+                            : item.lastSoldAt().toString()))
+                    .collect(Collectors.joining("\n"));
+        }
+
+        String prompt = buildInactiveProductsPrompt(
+                question,
+                inactiveProducts,
+                days
+        );
+
+        String answer = generateAiAnswer(prompt, fallbackAnswer);
+
+        return new AssistantResponse(
+                answer,
+                "INACTIVE_PRODUCTS",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                inactiveProducts
         );
     }
 
@@ -464,6 +523,55 @@ public class AssistantServiceImpl implements AssistantService {
 
                 Provide a natural-language answer.
                 """.formatted(question, data);
+    }
+
+    private String buildInactiveProductsPrompt(
+            String question,
+            List<InactiveProductResponse> inactiveProducts,
+            int days
+    ) {
+        return """
+            You are TradePilot AI, an AI business assistant for small businesses.
+
+            The user's question is:
+            %s
+
+            The following data was retrieved from the business database.
+            It represents products that have not sold in the last %d days
+            or have never been sold.
+
+            Verified product data:
+            %s
+
+            Instructions:
+            - Answer using only the supplied product data.
+            - Distinguish products that have never sold from products that
+              were sold previously but have not sold recently.
+            - Do not invent product names, stock quantities, or sales dates.
+            - Do not claim that a product has never sold if it has a last-sale date.
+            - Provide practical recommendations where appropriate, but clearly
+              distinguish suggestions from verified facts.
+            - If the list is empty, explain that no inactive products were found
+              for the specified period.
+            - The inactivity period selected by the backend is authoritative.
+            - Do not reinterpret, modify, or infer a different inactivity period from the user's wording.
+            - Always describe the results using the supplied backend inactivity period.
+            - If the backend supplies 30 days, describe the results as covering 30 days.
+            """.formatted(
+                question,
+                days,
+                inactiveProducts.isEmpty()
+                        ? "No inactive products found."
+                        : inactiveProducts.stream()
+                        .map(item -> item.productName()
+                                + " | SKU: " + item.sku()
+                                + " | Stock: " + item.quantityInStock()
+                                + " | Last sold: "
+                                + (item.neverSold()
+                                ? "Never sold"
+                                : String.valueOf(item.lastSoldAt())))
+                        .collect(Collectors.joining("\n"))
+        );
     }
 
     private String generateAiAnswer(
@@ -551,7 +659,23 @@ public class AssistantServiceImpl implements AssistantService {
                 || question.contains("products to reorder");
     }
 
+    private boolean isInactiveProductsQuestion(String question) {
+        String normalized = question.toLowerCase(Locale.ROOT);
 
+        return normalized.contains("not sold")
+                || normalized.contains("never sold")
+                || normalized.contains("never been sold")
+                || normalized.contains("inactive product")
+                || normalized.contains("products inactive")
+                || normalized.contains("slow-moving")
+                || normalized.contains("slow moving")
+                || normalized.contains("haven't sold")
+                || normalized.contains("have not sold")
+                || normalized.contains("unsold product")
+                || normalized.contains("unsold products")
+                || normalized.contains("products that don't sell")
+                || normalized.contains("products that do not sell");
+    }
     private DateRange resolveDateRange(String question) {
 
         LocalDate today = LocalDate.now();

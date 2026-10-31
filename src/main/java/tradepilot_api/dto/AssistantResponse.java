@@ -11,6 +11,7 @@ public record AssistantResponse(
         List<BusinessSummary> summaries,
         List<LowStockItemResponse> lowStockItems,
         List<RestockRecommendationResponse> restockRecommendations,
-        List<ProductPerformanceResponse> bestSellingProducts
+        List<ProductPerformanceResponse> bestSellingProducts,
+        List<InactiveProductResponse>inactiveProductResponses
 ) {
 }
