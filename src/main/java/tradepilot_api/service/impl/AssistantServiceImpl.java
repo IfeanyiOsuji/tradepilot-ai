@@ -5,15 +5,9 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import tradepilot_api.dto.AssistantResponse;
-import tradepilot_api.dto.BusinessSummary;
-import tradepilot_api.dto.LowStockItemResponse;
-import tradepilot_api.dto.RestockRecommendationResponse;
+import tradepilot_api.dto.*;
 import tradepilot_api.entity.InventoryItem;
-import tradepilot_api.service.AssistantService;
-import tradepilot_api.service.BusinessSummaryService;
-import tradepilot_api.service.InventoryService;
-import tradepilot_api.service.RestockRecommendationService;
+import tradepilot_api.service.*;
 import tradepilot_api.service.ai.MetaAiClient;
 
 import java.time.DayOfWeek;
@@ -33,6 +27,7 @@ public class AssistantServiceImpl implements AssistantService {
     private final InventoryService inventoryService;
     private final MetaAiClient metaAiClient;
     private final RestockRecommendationService restockRecommendationService;
+    private final ProductPerformanceService productPerformanceService;
 
     @Override
     public AssistantResponse answerQuestion(String message) {
@@ -68,12 +63,17 @@ public class AssistantServiceImpl implements AssistantService {
             return answerRestockQuestion(message);
         }
 
+        if (isBestSellingQuestion(question)) {
+            return answerBestSellingQuestion(message);
+        }
+
         return new AssistantResponse(
                 "I cannot answer that question yet. Try asking about "
                         + "revenue, expenses, net cash flow, or low-stock products.",
                 "UNSUPPORTED",
                 null,
                 null,
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of()
@@ -119,7 +119,8 @@ public class AssistantServiceImpl implements AssistantService {
                 null,
                 List.of(),
                 List.of(),
-                recommendations
+                recommendations,
+                List.of()
         );
     }
 
@@ -166,7 +167,46 @@ public class AssistantServiceImpl implements AssistantService {
                 dateRange.endDate(),
                 summaries,
                 List.of(),
+                List.of(),
                 List.of()
+        );
+    }
+
+    private AssistantResponse answerBestSellingQuestion(String question) {
+
+        List<ProductPerformanceResponse> bestSellingProducts =
+                productPerformanceService.getBestSellingProducts();
+
+        String fallbackAnswer;
+
+        if (bestSellingProducts.isEmpty()) {
+            fallbackAnswer = "No inventory-linked product sales have been recorded yet.";
+        } else {
+            fallbackAnswer = "Your best-selling products are:\n"
+                    + bestSellingProducts.stream()
+                    .map(item -> item.productName()
+                            + " (SKU: " + item.sku() + ")"
+                            + " - Quantity sold: "
+                            + item.totalQuantitySold().toPlainString()
+                            + ", Revenue: "
+                            + item.currency() + " "
+                            + item.totalRevenue().toPlainString())
+                    .collect(Collectors.joining("\n"));
+        }
+
+        String prompt = buildBestSellingPrompt(question, bestSellingProducts);
+
+        String answer = generateAiAnswer(prompt, fallbackAnswer);
+
+        return new AssistantResponse(
+                answer,
+                "BEST_SELLING_PRODUCTS",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                bestSellingProducts
         );
     }
 
@@ -227,6 +267,69 @@ public class AssistantServiceImpl implements AssistantService {
 
                 Provide a natural-language answer to the user's question.
                 """.formatted(question, data);
+    }
+
+    private String buildBestSellingPrompt(
+            String question,
+            List<ProductPerformanceResponse> products) {
+
+        StringBuilder data = new StringBuilder();
+
+        if (products.isEmpty()) {
+            data.append("No inventory-linked product sales have been recorded.");
+        } else {
+            for (ProductPerformanceResponse product : products) {
+                data.append("\nProduct: ").append(product.productName());
+
+                data.append("\nSKU: ").append(product.sku());
+
+                data.append("\nTotal quantity sold: ")
+                        .append(product.totalQuantitySold().toPlainString());
+
+                data.append("\nTotal revenue: ")
+                        .append(product.currency())
+                        .append(" ")
+                        .append(product.totalRevenue().toPlainString());
+
+                data.append("\nAverage selling price: ")
+                        .append(product.currency())
+                        .append(" ")
+                        .append(product.averageSellingPrice().toPlainString());
+
+                data.append("\nLast sold at: ")
+                        .append(product.lastSoldAt());
+
+                data.append("\n");
+            }
+        }
+
+        return """
+            You are TradePilot AI, a helpful business assistant
+            for small businesses.
+
+            Answer the user's question using only the product sales
+            data supplied below.
+
+            STRICT RULES:
+            1. Never invent products, sales quantities, or revenue figures.
+            2. Never change the supplied numerical values.
+            3. Do not calculate or modify sales figures.
+            4. Use the currency provided with each monetary amount.
+            5. Distinguish quantity sold from revenue generated.
+            6. Identify the best-selling products using the supplied data.
+            7. If no products are listed, clearly say no inventory-linked
+               product sales have been recorded.
+            8. Do not claim access to sales records not supplied.
+            9. Keep the answer clear and concise.
+
+            User's question:
+            %s
+
+            Product sales data:
+            %s
+
+            Provide a natural-language answer.
+            """.formatted(question, data);
     }
 
     private String buildFinancialAnswer(
@@ -315,6 +418,7 @@ public class AssistantServiceImpl implements AssistantService {
                 null,
                 List.of(),
                 lowStockItems,
+                List.of(),
                 List.of()
         );
     }
@@ -411,6 +515,16 @@ public class AssistantServiceImpl implements AssistantService {
                 || question.contains("sold");
     }
 
+    private boolean isBestSellingQuestion(String question) {
+        return question.contains("best-selling")
+                || question.contains("best selling")
+                || question.contains("sell the most")
+                || question.contains("selling the most")
+                || question.contains("top-selling")
+                || question.contains("top selling")
+                || question.contains("most popular products");
+    }
+
     private boolean isExpenseQuestion(String question) {
         return question.contains("expense")
                 || question.contains("expenses")
@@ -436,6 +550,7 @@ public class AssistantServiceImpl implements AssistantService {
                 || question.contains("refill inventory")
                 || question.contains("products to reorder");
     }
+
 
     private DateRange resolveDateRange(String question) {
 
