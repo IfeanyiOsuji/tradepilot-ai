@@ -8,10 +8,12 @@ import org.springframework.stereotype.Service;
 import tradepilot_api.dto.AssistantResponse;
 import tradepilot_api.dto.BusinessSummary;
 import tradepilot_api.dto.LowStockItemResponse;
+import tradepilot_api.dto.RestockRecommendationResponse;
 import tradepilot_api.entity.InventoryItem;
 import tradepilot_api.service.AssistantService;
 import tradepilot_api.service.BusinessSummaryService;
 import tradepilot_api.service.InventoryService;
+import tradepilot_api.service.RestockRecommendationService;
 import tradepilot_api.service.ai.MetaAiClient;
 
 import java.time.DayOfWeek;
@@ -30,6 +32,7 @@ public class AssistantServiceImpl implements AssistantService {
     private final BusinessSummaryService businessSummaryService;
     private final InventoryService inventoryService;
     private final MetaAiClient metaAiClient;
+    private final RestockRecommendationService restockRecommendationService;
 
     @Override
     public AssistantResponse answerQuestion(String message) {
@@ -61,6 +64,9 @@ public class AssistantServiceImpl implements AssistantService {
         if (isSummaryQuestion(question)) {
             return answerFinancialQuestion(message, question, "SUMMARY");
         }
+        if (isRestockQuestion(question)) {
+            return answerRestockQuestion(message);
+        }
 
         return new AssistantResponse(
                 "I cannot answer that question yet. Try asking about "
@@ -69,7 +75,51 @@ public class AssistantServiceImpl implements AssistantService {
                 null,
                 null,
                 List.of(),
+                List.of(),
                 List.of()
+        );
+    }
+
+    private AssistantResponse answerRestockQuestion(String question) {
+
+        List<RestockRecommendationResponse> recommendations =
+                restockRecommendationService.getRestockRecommendations();
+
+        String fallbackAnswer;
+
+        if (recommendations.isEmpty()) {
+            fallbackAnswer = "No products currently meet the low-stock "
+                    + "criteria for a restock recommendation.";
+        } else {
+            fallbackAnswer = "Found " + recommendations.size()
+                    + " product(s) requiring restocking:\n"
+                    + recommendations.stream()
+                    .map(item -> item.productName()
+                            + " (SKU: " + item.sku()
+                            + ") - current stock: "
+                            + item.quantityInStock().toPlainString()
+                            + ", target stock: "
+                            + item.targetStockLevel().toPlainString()
+                            + ", recommended restock: "
+                            + item.recommendedRestockQuantity().toPlainString()
+                            + ", estimated cost: "
+                            + item.currency() + " "
+                            + item.estimatedRestockCost().toPlainString())
+                    .collect(Collectors.joining("\n"));
+        }
+
+        String prompt = buildRestockPrompt(question, recommendations);
+
+        String answer = generateAiAnswer(prompt, fallbackAnswer);
+
+        return new AssistantResponse(
+                answer,
+                "RESTOCK_RECOMMENDATIONS",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                recommendations
         );
     }
 
@@ -115,6 +165,7 @@ public class AssistantServiceImpl implements AssistantService {
                 dateRange.startDate(),
                 dateRange.endDate(),
                 summaries,
+                List.of(),
                 List.of()
         );
     }
@@ -263,7 +314,8 @@ public class AssistantServiceImpl implements AssistantService {
                 null,
                 null,
                 List.of(),
-                lowStockItems
+                lowStockItems,
+                List.of()
         );
     }
 
@@ -378,6 +430,13 @@ public class AssistantServiceImpl implements AssistantService {
                 || question.equals("summarize my business");
     }
 
+    private boolean isRestockQuestion(String question) {
+        return question.contains("restock")
+                || question.contains("replenish")
+                || question.contains("refill inventory")
+                || question.contains("products to reorder");
+    }
+
     private DateRange resolveDateRange(String question) {
 
         LocalDate today = LocalDate.now();
@@ -430,6 +489,72 @@ public class AssistantServiceImpl implements AssistantService {
                 null,
                 "across all recorded dates"
         );
+    }
+
+    private String buildRestockPrompt(
+            String question,
+            List<RestockRecommendationResponse> recommendations) {
+
+        StringBuilder data = new StringBuilder();
+
+        if (recommendations.isEmpty()) {
+            data.append("No products currently require restocking.");
+        } else {
+            for (RestockRecommendationResponse item : recommendations) {
+                data.append("\nProduct: ").append(item.productName());
+                data.append("\nSKU: ").append(item.sku());
+
+                data.append("\nCurrent stock: ")
+                        .append(item.quantityInStock().toPlainString());
+
+                data.append("\nLow-stock threshold: ")
+                        .append(item.lowStockThreshold().toPlainString());
+
+                data.append("\nTarget stock level: ")
+                        .append(item.targetStockLevel().toPlainString());
+
+                data.append("\nRecommended restock quantity: ")
+                        .append(item.recommendedRestockQuantity().toPlainString());
+
+                data.append("\nUnit cost: ")
+                        .append(item.currency())
+                        .append(" ")
+                        .append(item.unitCost().toPlainString());
+
+                data.append("\nEstimated restock cost: ")
+                        .append(item.currency())
+                        .append(" ")
+                        .append(item.estimatedRestockCost().toPlainString());
+
+                data.append("\n");
+            }
+        }
+
+        return """
+            You are TradePilot AI, a helpful inventory assistant
+            for small businesses.
+
+            Answer the user's restocking question using only the
+            inventory data supplied below.
+
+            STRICT RULES:
+            1. Never invent products, quantities, or prices.
+            2. Never change the supplied numerical values.
+            3. Do not calculate or modify restock quantities or costs.
+            4. Use the supplied currency for every monetary amount.
+            5. Explain the recommended restock quantities clearly.
+            6. If no products are listed, say no restocking is currently recommended.
+            7. Do not claim that a purchase order has been created or placed.
+            8. Keep the answer concise and practical.
+
+            User's question:
+            %s
+
+            Inventory restock data:
+            %s
+
+            Provide a natural-language answer.
+            """.formatted(question, data);
     }
 
     private record DateRange(

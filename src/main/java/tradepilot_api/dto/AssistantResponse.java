@@ -9,6 +9,7 @@ public record AssistantResponse(
         LocalDate startDate,
         LocalDate endDate,
         List<BusinessSummary> summaries,
-        List<LowStockItemResponse> lowStockItems
+        List<LowStockItemResponse> lowStockItems,
+        List<RestockRecommendationResponse> restockRecommendations
 ) {
 }
