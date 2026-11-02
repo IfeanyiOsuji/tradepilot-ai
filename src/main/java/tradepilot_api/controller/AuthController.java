@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tradepilot_api.dto.AuthResponse;
+import tradepilot_api.dto.LoginRequest;
+import tradepilot_api.dto.LoginResponse;
 import tradepilot_api.dto.RegisterRequest;
 import tradepilot_api.service.AuthService;
 
@@ -22,5 +24,12 @@ public class AuthController {
             @Valid @RequestBody RegisterRequest request
     ) {
         return authService.register(request);
+    }
+
+    @PostMapping("/login")
+    public LoginResponse login(
+            @Valid @RequestBody LoginRequest request
+    ) {
+        return authService.login(request);
     }
 }
