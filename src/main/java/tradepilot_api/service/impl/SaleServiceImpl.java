@@ -11,8 +11,11 @@ import tradepilot_api.dto.InventorySaleRequest;
 import tradepilot_api.entity.InventoryItem;
 import tradepilot_api.entity.Sale;
 import tradepilot_api.entity.SaleType;
+import tradepilot_api.entity.User;
 import tradepilot_api.repository.InventoryRepository;
 import tradepilot_api.repository.SaleRepository;
+import tradepilot_api.repository.UserRepository;
+import tradepilot_api.service.CurrentUserService;
 import tradepilot_api.service.SaleService;
 import tradepilot_api.service.StockMovementService;
 
@@ -34,6 +37,9 @@ public class SaleServiceImpl implements SaleService {
     private final SaleRepository saleRepository;
     private final StockMovementService stockMovementService;
     private final InventoryRepository inventoryRepository;
+
+    private final CurrentUserService currentUserService;
+    private final UserRepository userRepository;
 
     @Transactional
     @Override
@@ -84,19 +90,46 @@ public class SaleServiceImpl implements SaleService {
                 soldAt
         );
 
+        sale.setOwner(getAuthenticatedOwner());
+
         return saleRepository.save(sale);
     }
+
 
     @Override
     @Transactional(readOnly = true)
     public List<Sale> getAllSales() {
-        return saleRepository.findAll();
+
+        if (currentUserService.isAdmin()) {
+            return saleRepository.findAll();
+        }
+
+        return saleRepository.findAllByOwnerId(
+                currentUserService.getCurrentUserId()
+        );
     }
 
     @Override
-    public List<Sale> getSalesBetween(LocalDateTime start, LocalDateTime end) {
+    @Transactional(readOnly = true)
+    public List<Sale> getSalesBetween(
+            LocalDateTime start,
+            LocalDateTime end
+    ) {
+
+        if (currentUserService.isAdmin()) {
+            return saleRepository
+                    .findBySoldAtGreaterThanEqualAndSoldAtLessThan(
+                            start,
+                            end
+                    );
+        }
+
         return saleRepository
-                .findBySoldAtGreaterThanEqualAndSoldAtLessThan(start, end);
+                .findByOwnerIdAndSoldAtGreaterThanEqualAndSoldAtLessThan(
+                        currentUserService.getCurrentUserId(),
+                        start,
+                        end
+                );
     }
 
 
@@ -123,6 +156,8 @@ public class SaleServiceImpl implements SaleService {
         // Link the sale to its actual inventory item.
         sale.setInventoryItem(item);
 
+        sale.setOwner(getAuthenticatedOwner());
+
         // Save the sale within the current transaction.
         Sale savedSale = saleRepository.save(sale);
 
@@ -134,5 +169,14 @@ public class SaleServiceImpl implements SaleService {
         );
 
         return savedSale;
+    }
+
+    private User getAuthenticatedOwner() {
+        Long userId = currentUserService.getCurrentUserId();
+
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Authenticated user not found"
+                ));
     }
 }

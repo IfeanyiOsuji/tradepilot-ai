@@ -1,16 +1,23 @@
 package tradepilot_api.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "inventory_items",
-        uniqueConstraints = {@UniqueConstraint(name = "uk_inventory_items_sku", columnNames = "sku")
+@Table(
+        name = "inventory_items",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_inventory_owner_sku",
+                        columnNames = {"owner_id", "sku"}
+                )
         }
 )
 @Getter
@@ -49,6 +56,12 @@ public class InventoryItem {
 
     @Column(precision = 19, scale = 4)
     private BigDecimal targetStockLevel;
+
+    @JsonIgnore
+    @Setter
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    private User owner;
 
     public InventoryItem(
             String productName,

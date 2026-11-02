@@ -1,5 +1,5 @@
 
-        package tradepilot_api.service;
+package tradepilot_api.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -14,15 +14,26 @@ import java.util.List;
 @Service
 public class JwtService {
 
-    private static final long TOKEN_LIFETIME_SECONDS = 3600;
-
     private final JwtEncoder jwtEncoder;
+    private final String issuer;
+    private final long tokenLifetimeSeconds;
 
-    @Value("${app.jwt.issuer:tradepilot-api}")
-    private String issuer;
+    public JwtService(
+            JwtEncoder jwtEncoder,
+            @Value("${app.jwt.issuer:tradepilot-api}") String issuer,
+            @Value("${app.jwt.access-token-expiration-minutes:15}")
+            long tokenLifetimeMinutes
+    ) {
+        if (tokenLifetimeMinutes <= 0) {
+            throw new IllegalArgumentException(
+                    "JWT lifetime must be greater than zero"
+            );
+        }
 
-    public JwtService(JwtEncoder jwtEncoder) {
         this.jwtEncoder = jwtEncoder;
+        this.issuer = issuer;
+        this.tokenLifetimeSeconds =
+                Math.multiplyExact(tokenLifetimeMinutes, 60);
     }
 
     public String generateToken(
@@ -31,13 +42,19 @@ public class JwtService {
             String fullName,
             String role
     ) {
+
         Instant now = Instant.now();
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .subject(email)
                 .issuedAt(now)
-                .expiresAt(now.plus(TOKEN_LIFETIME_SECONDS, ChronoUnit.SECONDS))
+                .expiresAt(
+                        now.plus(
+                                tokenLifetimeSeconds,
+                                ChronoUnit.SECONDS
+                        )
+                )
                 .claim("userId", userId)
                 .claim("name", fullName)
                 .claim("roles", List.of(role))
@@ -49,6 +66,6 @@ public class JwtService {
     }
 
     public long getTokenLifetimeSeconds() {
-        return TOKEN_LIFETIME_SECONDS;
+        return tokenLifetimeSeconds;
     }
 }

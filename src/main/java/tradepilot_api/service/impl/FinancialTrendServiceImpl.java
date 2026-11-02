@@ -1,3 +1,4 @@
+
 package tradepilot_api.service.impl;
 
 import lombok.RequiredArgsConstructor;
@@ -7,11 +8,15 @@ import tradepilot_api.dto.DailyFinancialTrendResponse;
 import tradepilot_api.repository.DailyFinancialTrendProjection;
 import tradepilot_api.repository.ExpenseRepository;
 import tradepilot_api.repository.SaleRepository;
+import tradepilot_api.service.CurrentUserService;
 import tradepilot_api.service.FinancialTrendService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.*;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 @RequiredArgsConstructor
@@ -20,12 +25,13 @@ public class FinancialTrendServiceImpl implements FinancialTrendService {
 
     private final SaleRepository saleRepository;
     private final ExpenseRepository expenseRepository;
+    private final CurrentUserService currentUserService;
 
     @Override
     public List<DailyFinancialTrendResponse> getDailyTrends(
             LocalDate startDate,
-            LocalDate endDate) {
-
+            LocalDate endDate
+    ) {
         if (startDate == null || endDate == null) {
             throw new IllegalArgumentException(
                     "Both startDate and endDate are required."
@@ -38,15 +44,37 @@ public class FinancialTrendServiceImpl implements FinancialTrendService {
             );
         }
 
-        var start = startDate.atStartOfDay();
-        var end = endDate.plusDays(1).atStartOfDay();
+        LocalDateTime start = startDate.atStartOfDay();
+        LocalDateTime end = endDate.plusDays(1).atStartOfDay();
 
-        Map<String, TrendAccumulator> trends = new TreeMap<>();
+        boolean isAdmin = currentUserService.isAdmin();
 
-        for (DailyFinancialTrendProjection item :
-                saleRepository.findDailySalesTrend(start, end)) {
+        Long ownerId = isAdmin
+                ? null
+                : currentUserService.getCurrentUserId();
 
-            String key = buildKey(item.getTrendDate(), item.getCurrency());
+        List<DailyFinancialTrendProjection> salesTrends =
+                isAdmin
+                        ? saleRepository.findDailySalesTrend(start, end)
+                        : saleRepository.findDailySalesTrendByOwner(
+                        start, end, ownerId
+                );
+
+        List<DailyFinancialTrendProjection> expenseTrends =
+                isAdmin
+                        ? expenseRepository.findDailyExpenseTrend(start, end)
+                        : expenseRepository.findDailyExpenseTrendByOwner(
+                        start, end, ownerId
+                );
+
+        Map<TrendKey, TrendAccumulator> trends = new TreeMap<>();
+
+        for (DailyFinancialTrendProjection item : salesTrends) {
+
+            TrendKey key = new TrendKey(
+                    item.getTrendDate(),
+                    item.getCurrency()
+            );
 
             TrendAccumulator accumulator = trends.computeIfAbsent(
                     key,
@@ -56,14 +84,16 @@ public class FinancialTrendServiceImpl implements FinancialTrendService {
                     )
             );
 
-            accumulator.sales = item.getTotalAmount();
-            accumulator.salesCount = item.getTransactionCount();
+            accumulator.sales = zeroIfNull(item.getTotalAmount());
+            accumulator.salesCount = zeroIfNull(item.getTransactionCount());
         }
 
-        for (DailyFinancialTrendProjection item :
-                expenseRepository.findDailyExpenseTrend(start, end)) {
+        for (DailyFinancialTrendProjection item : expenseTrends) {
 
-            String key = buildKey(item.getTrendDate(), item.getCurrency());
+            TrendKey key = new TrendKey(
+                    item.getTrendDate(),
+                    item.getCurrency()
+            );
 
             TrendAccumulator accumulator = trends.computeIfAbsent(
                     key,
@@ -73,8 +103,8 @@ public class FinancialTrendServiceImpl implements FinancialTrendService {
                     )
             );
 
-            accumulator.expenses = item.getTotalAmount();
-            accumulator.expenseCount = item.getTransactionCount();
+            accumulator.expenses = zeroIfNull(item.getTotalAmount());
+            accumulator.expenseCount = zeroIfNull(item.getTransactionCount());
         }
 
         return trends.values()
@@ -91,8 +121,30 @@ public class FinancialTrendServiceImpl implements FinancialTrendService {
                 .toList();
     }
 
-    private String buildKey(LocalDate date, String currency) {
-        return date + "|" + currency;
+    private BigDecimal zeroIfNull(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Long zeroIfNull(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    private record TrendKey(
+            LocalDate date,
+            String currency
+    ) implements Comparable<TrendKey> {
+
+        @Override
+        public int compareTo(TrendKey other) {
+
+            int dateComparison = date.compareTo(other.date);
+
+            if (dateComparison != 0) {
+                return dateComparison;
+            }
+
+            return currency.compareTo(other.currency);
+        }
     }
 
     private static class TrendAccumulator {

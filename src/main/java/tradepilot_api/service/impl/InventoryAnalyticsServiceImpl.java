@@ -1,3 +1,4 @@
+
 package tradepilot_api.service;
 
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import java.util.List;
 public class InventoryAnalyticsServiceImpl implements InventoryAnalyticsService {
 
     private final InventoryRepository inventoryRepository;
+    private final CurrentUserService currentUserService;
 
     @Override
     public List<InactiveProductResponse> getInactiveProducts(int days) {
@@ -28,8 +30,19 @@ public class InventoryAnalyticsServiceImpl implements InventoryAnalyticsService 
 
         LocalDateTime cutoffDate = LocalDateTime.now().minusDays(days);
 
-        List<InactiveProductProjection> products =
-                inventoryRepository.findInventoryProductsWithLastSaleDate();
+        List<InactiveProductProjection> products;
+
+        if (currentUserService.isAdmin()) {
+            // Administrators can view all users' inventory analytics.
+            products = inventoryRepository
+                    .findInventoryProductsWithLastSaleDate();
+        } else {
+            // Regular users can view only their own inventory.
+            Long ownerId = currentUserService.getCurrentUserId();
+
+            products = inventoryRepository
+                    .findInventoryProductsWithLastSaleDateByOwner(ownerId);
+        }
 
         return products.stream()
                 .filter(product ->

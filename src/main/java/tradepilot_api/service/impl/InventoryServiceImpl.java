@@ -2,10 +2,15 @@ package tradepilot_api.service.impl;
 
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import tradepilot_api.entity.InventoryItem;
+import tradepilot_api.entity.User;
 import tradepilot_api.repository.InventoryRepository;
+import tradepilot_api.repository.UserRepository;
+import tradepilot_api.service.CurrentUserService;
 import tradepilot_api.service.InventoryService;
 
 import java.math.BigDecimal;
@@ -19,6 +24,8 @@ import static tradepilot_api.utils.TradeUtil.SUPPORTED_CURRENCIES;
 public class InventoryServiceImpl implements InventoryService {
 
     private final InventoryRepository inventoryRepository;
+    private final UserRepository userRepository;
+    private final CurrentUserService currentUserService;
 
     @Transactional
     @Override
@@ -49,9 +56,11 @@ public class InventoryServiceImpl implements InventoryService {
             );
         }
 
-        if (inventoryRepository.findBySku(sku).isPresent()) {
+        Long ownerId = currentUserService.getCurrentUserId();
+
+        if (inventoryRepository.findBySkuAndOwnerId(sku, ownerId).isPresent()) {
             throw new IllegalArgumentException(
-                    "A product with SKU " + sku + " already exists."
+                    "A product with SKU " + sku + " already exists in your inventory."
             );
         }
 
@@ -127,50 +136,100 @@ public class InventoryServiceImpl implements InventoryService {
                 lowStockThreshold,
                 targetStockLevel
         );
+        item.setOwner(getAuthenticatedUser());
 
         return inventoryRepository.save(item);
+
+
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<InventoryItem> getAllInventoryItems() {
-        return inventoryRepository.findAll();
-    }
 
+        if (currentUserService.isAdmin()) {
+            return inventoryRepository.findAll();
+        }
+
+        return inventoryRepository.findAllByOwnerId(
+                currentUserService.getCurrentUserId()
+        );
+    }
     @Override
     @Transactional(readOnly = true)
     public InventoryItem getInventoryItemBySku(String sku) {
+
         if (sku == null || sku.isBlank()) {
             throw new IllegalArgumentException("SKU is required.");
         }
 
+        String normalizedSku = sku.trim().toUpperCase(Locale.ROOT);
+
         return inventoryRepository
-                .findBySku(sku.trim().toUpperCase(Locale.ROOT))
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No inventory item found with SKU: " + sku
+                .findBySkuAndOwnerId(
+                        normalizedSku,
+                        currentUserService.getCurrentUserId()
+                )
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Inventory item not found"
                 ));
     }
+
 
     @Override
     @Transactional(readOnly = true)
     public List<InventoryItem> searchInventoryItems(String productName) {
+
         if (productName == null || productName.isBlank()) {
             throw new IllegalArgumentException(
                     "Product name is required for searching."
             );
         }
-        return inventoryRepository
-                .findByProductNameContainingIgnoreCase(productName.trim());
 
+        String normalizedName = productName.trim();
+
+        if (currentUserService.isAdmin()) {
+            return inventoryRepository
+                    .findByProductNameContainingIgnoreCase(normalizedName);
+        }
+
+        return inventoryRepository
+                .findByProductNameContainingIgnoreCaseAndOwnerId(
+                        normalizedName,
+                        currentUserService.getCurrentUserId()
+                );
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<InventoryItem> getLowStockItems() {
-        return inventoryRepository.findAll()
-                .stream()
-                .filter(item -> item.getQuantityInStock()
-                        .compareTo(item.getLowStockThreshold()) <= 0)
+
+        List<InventoryItem> items;
+
+        if (currentUserService.isAdmin()) {
+            items = inventoryRepository.findAll();
+        } else {
+            items = inventoryRepository.findAllByOwnerId(
+                    currentUserService.getCurrentUserId()
+            );
+        }
+
+        return items.stream()
+                .filter(item ->
+                        item.getQuantityInStock()
+                                .compareTo(item.getLowStockThreshold()) <= 0
+                )
                 .toList();
+    }
+
+    private User getAuthenticatedUser() {
+        Long userId = currentUserService.getCurrentUserId();
+
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        "Authenticated user not found"
+                ));
     }
 }

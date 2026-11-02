@@ -1,14 +1,17 @@
 package tradepilot_api.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 import tradepilot_api.dto.StockMovementResponse;
 import tradepilot_api.entity.InventoryItem;
 import tradepilot_api.entity.StockMovement;
 import tradepilot_api.entity.StockMovementType;
 import tradepilot_api.repository.InventoryRepository;
 import tradepilot_api.repository.StockMovementRepository;
+import tradepilot_api.service.CurrentUserService;
 import tradepilot_api.service.StockMovementService;
 
 import java.math.BigDecimal;
@@ -19,6 +22,8 @@ import java.util.List;
 public class StockMovementServiceImpl implements StockMovementService {
     private final InventoryRepository inventoryRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final CurrentUserService currentUserService;
+
     @Override
     @Transactional
     public StockMovementResponse receiveStock(Long inventoryItemId, BigDecimal quantity, String description) {
@@ -119,23 +124,51 @@ public class StockMovementServiceImpl implements StockMovementService {
         return toResponse(stockMovementRepository.save(movement));
     }
 
+
     @Override
-    @Transactional
-    public List<StockMovementResponse> getMovementHistory(Long inventoryItemId) {
+    @Transactional(readOnly = true)
+    public List<StockMovementResponse> getMovementHistory(
+            Long inventoryItemId
+    ) {
+
         if (inventoryItemId == null || inventoryItemId <= 0) {
             throw new IllegalArgumentException(
                     "A valid inventory item ID is required."
             );
         }
 
-        if (!inventoryRepository.existsById(inventoryItemId)) {
-            throw new IllegalArgumentException(
-                    "No inventory item found with ID: " + inventoryItemId
-            );
+        if (currentUserService.isAdmin()) {
+
+            if (!inventoryRepository.existsById(inventoryItemId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Inventory item not found"
+                );
+            }
+
+        } else {
+
+            Long currentUserId =
+                    currentUserService.getCurrentUserId();
+
+            boolean ownsInventory = inventoryRepository
+                    .existsByIdAndOwnerId(
+                            inventoryItemId,
+                            currentUserId
+                    );
+
+            if (!ownsInventory) {
+                throw new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Inventory item not found"
+                );
+            }
         }
 
         return stockMovementRepository
-                .findByInventoryItemIdOrderByCreatedAtDesc(inventoryItemId)
+                .findByInventoryItemIdOrderByCreatedAtDesc(
+                        inventoryItemId
+                )
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -149,12 +182,20 @@ public class StockMovementServiceImpl implements StockMovementService {
             );
         }
 
-        return inventoryRepository.findByIdForUpdate(inventoryItemId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No inventory item found with ID: " + inventoryItemId
-                ));
-    }
+        Long currentUserId = currentUserService.getCurrentUserId();
 
+        return inventoryRepository
+                .findByIdAndOwnerIdForUpdate(
+                        inventoryItemId,
+                        currentUserId
+                )
+                .orElseThrow(() ->
+                        new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Inventory item not found"
+                        )
+                );
+    }
     private void validatePositiveQuantity(BigDecimal quantity) {
 
         if (quantity == null

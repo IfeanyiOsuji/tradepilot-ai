@@ -33,4 +33,32 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end
     );
+
+    List<Expense> findAllByOwnerId(Long ownerId);
+
+    List<Expense> findByOwnerIdAndIncurredAtGreaterThanEqualAndIncurredAtLessThan(
+            Long ownerId,
+            LocalDateTime start,
+            LocalDateTime end
+    );
+
+    @Query("""
+    SELECT
+        CAST(e.incurredAt AS LocalDate) AS trendDate,
+        e.currency AS currency,
+        SUM(e.amount) AS totalAmount,
+        COUNT(e.id) AS transactionCount
+    FROM Expense e
+    WHERE e.incurredAt >= :start
+      AND e.incurredAt < :end
+      AND e.owner.id = :ownerId
+    GROUP BY CAST(e.incurredAt AS LocalDate), e.currency
+    ORDER BY CAST(e.incurredAt AS LocalDate)
+    """)
+    List<DailyFinancialTrendProjection> findDailyExpenseTrendByOwner(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("ownerId") Long ownerId
+    );
+
 }

@@ -65,6 +65,17 @@ public class AssistantServiceImpl implements AssistantService {
         if (isInactiveProductsQuestion(question)) {
             return answerInactiveProductsQuestion(question);
         }
+        if (isRestockQuestion(question)) {
+            return answerRestockQuestion(message);
+        }
+
+        if (isBestSellingQuestion(question)) {
+            return answerBestSellingQuestion(message);
+        }
+
+        if (isInventoryValuationQuestion(question)) {
+            return answerInventoryValuationQuestion(question);
+        }
         if (isRevenueQuestion(question)) {
             return answerFinancialQuestion(message, question, "REVENUE");
         }
@@ -80,17 +91,7 @@ public class AssistantServiceImpl implements AssistantService {
         if (isSummaryQuestion(question)) {
             return answerFinancialQuestion(message, question, "SUMMARY");
         }
-        if (isRestockQuestion(question)) {
-            return answerRestockQuestion(message);
-        }
 
-        if (isBestSellingQuestion(question)) {
-            return answerBestSellingQuestion(message);
-        }
-
-        if (isInventoryValuationQuestion(question)) {
-            return answerInventoryValuationQuestion(question);
-        }
 
 
 
@@ -1293,12 +1294,26 @@ public class AssistantServiceImpl implements AssistantService {
                 || question.contains("cashflow");
     }
 
+
     private boolean isSummaryQuestion(String question) {
         return question.contains("business summary")
                 || question.contains("overall summary")
                 || question.equals("summary")
-                || question.equals("summarize my business");
+                || question.contains("summarize my business")
+                || question.contains("summarise my business")
+                || question.contains("business performing")
+                || question.contains("business performance")
+                || question.contains("business doing")
+                || question.contains("business doing financially")
+                || question.contains("business overview")
+                || question.contains("financial overview")
+                || question.contains("financial summary")
+                || question.contains("overall performance")
+                || question.contains("financial health")
+                || question.contains("how is my business")
+                || question.contains("how is the business");
     }
+
 
     private boolean isRestockQuestion(String question) {
         return question.contains("restock")

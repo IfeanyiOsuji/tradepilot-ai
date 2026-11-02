@@ -12,10 +12,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -94,18 +91,12 @@ public class FinancialComparisonServiceImpl
                         )
                 );
 
-        List<String> currencies = new ArrayList<>();
+        Set<String> currencies = new TreeSet<>();
 
         currencies.addAll(currentSummaries.keySet());
-
-        for (String currency : previousSummaries.keySet()) {
-            if (!currencies.contains(currency)) {
-                currencies.add(currency);
-            }
-        }
+        currencies.addAll(previousSummaries.keySet());
 
         return currencies.stream()
-                .sorted()
                 .map(currency -> {
 
                     BusinessSummary current =

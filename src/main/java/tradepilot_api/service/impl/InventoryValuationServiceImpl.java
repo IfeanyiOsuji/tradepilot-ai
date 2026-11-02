@@ -1,3 +1,4 @@
+
 package tradepilot_api.service;
 
 import lombok.RequiredArgsConstructor;
@@ -13,15 +14,32 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class InventoryValuationServiceImpl implements InventoryValuationService {
+public class InventoryValuationServiceImpl
+        implements InventoryValuationService {
 
     private final InventoryRepository inventoryRepository;
+    private final CurrentUserService currentUserService;
 
     @Override
     public List<InventoryValuationResponse> getInventoryValuation() {
 
-        return inventoryRepository.calculateInventoryValuation()
-                .stream()
+        List<InventoryValuationProjection> results;
+
+        if (currentUserService.isAdmin()) {
+
+            // Admin can view valuation across all users.
+            results = inventoryRepository.calculateInventoryValuation();
+
+        } else {
+
+            // Regular users can view only their inventory.
+            Long ownerId = currentUserService.getCurrentUserId();
+
+            results = inventoryRepository
+                    .calculateInventoryValuationByOwner(ownerId);
+        }
+
+        return results.stream()
                 .map(this::toResponse)
                 .toList();
     }
