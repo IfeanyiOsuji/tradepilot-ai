@@ -76,4 +76,21 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     ORDER BY SUM(s.quantity) DESC
     """)
     List<ProductPerformanceProjection> findBestSellingProducts();
+
+    @Query("""
+    SELECT
+        CAST(s.soldAt AS LocalDate) AS trendDate,
+        s.currency AS currency,
+        SUM(s.totalAmount) AS totalAmount,
+        COUNT(s.id) AS transactionCount
+    FROM Sale s
+    WHERE s.soldAt >= :start
+      AND s.soldAt < :end
+    GROUP BY CAST(s.soldAt AS LocalDate), s.currency
+    ORDER BY CAST(s.soldAt AS LocalDate)
+    """)
+    List<DailyFinancialTrendProjection> findDailySalesTrend(
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
 }

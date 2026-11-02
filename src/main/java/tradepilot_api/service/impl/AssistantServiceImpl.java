@@ -10,7 +10,10 @@ import tradepilot_api.entity.InventoryItem;
 import tradepilot_api.service.*;
 import tradepilot_api.service.ai.MetaAiClient;
 import tradepilot_api.utils.CurrencyFormatter;
+import tradepilot_api.utils.TradeUtil;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
@@ -33,6 +36,8 @@ public class AssistantServiceImpl implements AssistantService {
     private final ProductPerformanceService productPerformanceService;
     private final InventoryAnalyticsService inventoryAnalyticsService;
     private final InventoryValuationService inventoryValuationService;
+    private final FinancialTrendService financialTrendService;
+    private final FinancialComparisonService financialComparisonService;
 
     @Override
     public AssistantResponse answerQuestion(String message) {
@@ -45,9 +50,18 @@ public class AssistantServiceImpl implements AssistantService {
 
         String question = message.trim().toLowerCase(Locale.ROOT);
 
+        if (isFinancialComparisonQuestion(question)) {
+            return answerFinancialComparisonQuestion(message, question);
+        }
+
+        if (isDailyFinancialTrendQuestion(question)) {
+            return answerDailyFinancialTrendQuestion(message, question);
+        }
+
         if (isLowStockQuestion(question)) {
             return answerLowStockQuestion(message);
         }
+
         if (isInactiveProductsQuestion(question)) {
             return answerInactiveProductsQuestion(question);
         }
@@ -79,6 +93,7 @@ public class AssistantServiceImpl implements AssistantService {
         }
 
 
+
         return new AssistantResponse(
                 "I cannot answer that question yet. Try asking about "
                         + "revenue, expenses, net cash flow, or low-stock products.",
@@ -93,6 +108,347 @@ public class AssistantServiceImpl implements AssistantService {
                 List.of()
         );
     }
+
+    private AssistantResponse answerFinancialComparisonQuestion(
+            String message,
+            String question) {
+
+        List<FinancialComparisonResponse> comparisons;
+
+        String normalizedQuestion = question.toLowerCase(Locale.ROOT);
+
+        boolean monthly = normalizedQuestion.contains("month")
+                || normalizedQuestion.contains("monthly");
+
+        if (monthly) {
+            comparisons = financialComparisonService.compareMonths();
+        } else {
+            comparisons = financialComparisonService.compareWeeks();
+        }
+
+        if (comparisons.isEmpty()) {
+            return new AssistantResponse(
+                    "There is not enough recorded financial data to compare these periods.",
+                    monthly ? "MONTHLY_COMPARISON" : "WEEKLY_COMPARISON",
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    comparisons
+            );
+        }
+
+        String prompt = buildFinancialComparisonPrompt(
+                message,
+                comparisons,
+                monthly
+        );
+
+        String fallbackAnswer = buildFinancialComparisonAnswer(
+                comparisons,
+                monthly
+        );
+
+        String aiAnswer = generateAiAnswer(prompt, fallbackAnswer);
+
+        return new AssistantResponse(
+                aiAnswer,
+                monthly ? "MONTHLY_COMPARISON" : "WEEKLY_COMPARISON",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                comparisons
+        );
+    }
+
+    private boolean isFinancialComparisonQuestion(String question) {
+
+        boolean hasComparisonKeyword =
+                question.contains("compare")
+                        || question.contains("comparison")
+                        || question.contains("compared with")
+                        || question.contains("compared to")
+                        || question.contains("versus")
+                        || question.contains(" vs ")
+                        || question.contains("vs.")
+                        || question.contains("change from")
+                        || question.contains("change between")
+                        || question.contains("improve")
+                        || question.contains("increased")
+                        || question.contains("decreased");
+
+        boolean hasPeriodKeyword =
+                question.contains("week")
+                        || question.contains("weekly")
+                        || question.contains("month")
+                        || question.contains("monthly");
+
+        return hasComparisonKeyword && hasPeriodKeyword;
+    }
+
+    private String buildFinancialComparisonPrompt(
+            String question,
+            List<FinancialComparisonResponse> comparisons,
+            boolean monthly) {
+
+        StringBuilder facts = new StringBuilder();
+
+        for (FinancialComparisonResponse comparison : comparisons) {
+
+            facts.append("\nCurrency: ")
+                    .append(comparison.currency());
+
+            facts.append("\nCurrent period: ")
+                    .append(comparison.currentPeriodStart())
+                    .append(" to ")
+                    .append(comparison.currentPeriodEnd());
+
+            facts.append("\nPrevious period: ")
+                    .append(comparison.previousPeriodStart())
+                    .append(" to ")
+                    .append(comparison.previousPeriodEnd());
+
+            facts.append("\nCurrent revenue: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.currentRevenue(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nPrevious revenue: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.previousRevenue(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nRevenue change: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.revenueChange(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nRevenue percentage change: ")
+                    .append(formatPercentage(
+                            comparison.revenueChangePercentage()
+                    ));
+
+            facts.append("\nCurrent expenses: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.currentExpenses(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nPrevious expenses: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.previousExpenses(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nExpense change: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.expenseChange(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nExpense percentage change: ")
+                    .append(formatPercentage(
+                            comparison.expenseChangePercentage()
+                    ));
+
+            facts.append("\nCurrent net cash flow: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.currentNetCashFlow(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nPrevious net cash flow: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.previousNetCashFlow(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nNet cash flow change: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.netCashFlowChange(),
+                            comparison.currency()
+                    ));
+
+            facts.append("\nNet cash flow percentage change: ")
+                    .append(formatPercentage(
+                            comparison.netCashFlowChangePercentage()
+                    ));
+
+            facts.append("\n--------------------\n");
+        }
+
+        return """
+            You are TradePilot AI, a business financial assistant.
+
+            Answer the user's question using only the verified
+            financial comparison data supplied below.
+
+            Comparison type: %s
+
+            User question: %s
+
+            Verified financial data:
+            %s
+
+            Instructions:
+            1. Do not invent or recalculate any financial figures.
+            2. Preserve all supplied monetary amounts and percentages exactly.
+            3. Do not combine amounts from different currencies.
+            4. Explain whether revenue increased or decreased.
+            5. Explain whether expenses increased or decreased.
+            6. Explain whether net cash flow improved or declined.
+            7. An increase in expenses means the business spent more;
+               it is not automatically a positive result.
+            8. A negative net cash flow change means cash flow declined.
+            9. If a percentage change is N/A, explain that the previous
+               period had a zero value, so percentage change is undefined.
+            10. The current week or month may still be in progress.
+                Do not describe it as a completed period.
+            11. Net cash flow is not the same as accounting profit.
+            12. Keep the explanation clear, practical and concise.
+
+            Provide useful business insights without making unsupported
+            assumptions.
+            
+            Do not include empty headings or sections.
+            Only include a heading when you have relevant information to present.
+            
+            IMPORTANT: When the current period has zero revenue and zero expenses,
+            do not automatically describe this as a business decline or poor performance.
+            Explain that no transactions have been recorded for the period so far.
+            If the period is still in progress, describe the comparison as provisional.
+            """.formatted(
+                monthly ? "Monthly comparison" : "Weekly comparison",
+                question,
+                facts
+        );
+    }
+
+    private String formatPercentage(BigDecimal percentage) {
+
+        if (percentage == null) {
+            return "N/A";
+        }
+
+        return percentage
+                .setScale(2, RoundingMode.HALF_UP)
+                .toPlainString() + "%";
+    }
+
+    private String buildFinancialComparisonAnswer(
+            List<FinancialComparisonResponse> comparisons,
+            boolean monthly) {
+
+        StringBuilder answer = new StringBuilder();
+
+
+
+        answer.append(monthly
+                ? "Monthly financial comparison"
+                : "Weekly financial comparison");
+
+        answer.append("\n");
+
+        for (FinancialComparisonResponse comparison : comparisons) {
+
+            answer.append("\nCurrency: ")
+                    .append(comparison.currency());
+
+            answer.append("\nCurrent period revenue: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.currentRevenue(),
+                            comparison.currency()
+                    ));
+
+            answer.append("\nPrevious period revenue: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.previousRevenue(),
+                            comparison.currency()
+                    ));
+
+            BigDecimal revenueChange = comparison.revenueChange();
+
+            String revenueChangeText = revenueChange.compareTo(BigDecimal.ZERO) < 0
+                    ? "decreased by " + CurrencyFormatter.format(
+                    revenueChange.abs(), comparison.currency())
+                    : "increased by " + CurrencyFormatter.format(
+                    revenueChange, comparison.currency());
+
+            answer.append("\nRevenue change: ")
+                    .append(revenueChangeText);
+
+            answer.append(" (")
+                    .append(formatPercentage(
+                            comparison.revenueChangePercentage()
+                    ))
+                    .append(")");
+
+            answer.append("\nCurrent period expenses: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.currentExpenses(),
+                            comparison.currency()
+                    ));
+
+            answer.append("\nPrevious period expenses: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.previousExpenses(),
+                            comparison.currency()
+                    ));
+
+            answer.append("\nExpense change: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.expenseChange(),
+                            comparison.currency()
+                    ));
+
+            answer.append(" (")
+                    .append(formatPercentage(
+                            comparison.expenseChangePercentage()
+                    ))
+                    .append(")");
+
+            answer.append("\nCurrent net cash flow: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.currentNetCashFlow(),
+                            comparison.currency()
+                    ));
+
+            answer.append("\nPrevious net cash flow: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.previousNetCashFlow(),
+                            comparison.currency()
+                    ));
+
+            answer.append("\nNet cash flow change: ")
+                    .append(CurrencyFormatter.format(
+                            comparison.netCashFlowChange(),
+                            comparison.currency()
+                    ));
+
+            answer.append(" (")
+                    .append(formatPercentage(
+                            comparison.netCashFlowChangePercentage()
+                    ))
+                    .append(")\n");
+        }
+
+        return answer.toString();
+    }
+
 
     private AssistantResponse answerRestockQuestion(String question) {
 
@@ -734,6 +1090,138 @@ public class AssistantServiceImpl implements AssistantService {
         );
     }
 
+    private AssistantResponse answerDailyFinancialTrendQuestion(
+            String originalQuestion,
+            String question) {
+
+        DateRange dateRange = resolveTrendDateRange(question);
+
+        List<DailyFinancialTrendResponse> trends =
+                financialTrendService.getDailyTrends(
+                        dateRange.startDate(),
+                        dateRange.endDate()
+                );
+
+        String fallbackAnswer;
+
+        if (trends.isEmpty()) {
+            fallbackAnswer = "No recorded sales or expenses were found "
+                    + dateRange.description() + ".";
+        } else {
+            fallbackAnswer = "Daily financial trends "
+                    + dateRange.description() + ":\n"
+                    + trends.stream()
+                    .map(item -> item.date()
+                            + " (" + item.currency() + ")"
+                            + " - Sales: "
+                            + CurrencyFormatter.format(
+                            item.sales(), item.currency()
+                    )
+                            + ", Sales transactions: " + item.salesCount()
+                            + ", Expenses: "
+                            + CurrencyFormatter.format(
+                            item.expenses(), item.currency()
+                    )
+                            + ", Expense transactions: " + item.expenseCount()
+                            + ", Net cash flow: "
+                            + CurrencyFormatter.format(
+                            item.netCashFlow(), item.currency()
+                    ))
+                    .collect(Collectors.joining("\n"));
+        }
+
+        String prompt = buildDailyFinancialTrendPrompt(
+                originalQuestion,
+                dateRange,
+                trends
+        );
+
+        String answer = generateAiAnswer(prompt, fallbackAnswer);
+
+        return new AssistantResponse(
+                answer,
+                "DAILY_FINANCIAL_TRENDS",
+                dateRange.startDate(),
+                dateRange.endDate(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                trends
+        );
+    }
+
+    private String buildDailyFinancialTrendPrompt(
+            String question,
+            DateRange dateRange,
+            List<DailyFinancialTrendResponse> trends) {
+
+        String trendData;
+
+        if (trends.isEmpty()) {
+            trendData = "No daily financial records were found for this period.";
+        } else {
+            trendData = trends.stream()
+                    .map(item -> """
+                    Date: %s
+                    Currency: %s
+                    Sales: %s
+                    Sales transaction count: %d
+                    Expenses: %s
+                    Expense transaction count: %d
+                    Net cash flow: %s
+                    """.formatted(
+                            item.date(),
+                            item.currency(),
+                            CurrencyFormatter.format(
+                                    item.sales(), item.currency()
+                            ),
+                            item.salesCount(),
+                            CurrencyFormatter.format(
+                                    item.expenses(), item.currency()
+                            ),
+                            item.expenseCount(),
+                            CurrencyFormatter.format(
+                                    item.netCashFlow(), item.currency()
+                            )
+                    ))
+                    .collect(Collectors.joining("\n"));
+        }
+
+        return """
+        You are TradePilot AI, a helpful business assistant
+        for small businesses.
+
+        The user's question:
+        %s
+
+        Reporting period:
+        %s
+
+        Verified daily financial data retrieved from the database:
+        %s
+
+        STRICT RULES:
+        1. Answer using only the supplied daily financial data.
+        2. Never invent or estimate financial figures.
+        3. Never calculate, recalculate, or modify supplied figures.
+        4. Preserve the exact formatted monetary amounts supplied.
+        5. Do not remove currency symbols or thousands separators.
+        6. Keep different currencies separate.
+        7. Do not describe net cash flow as accounting profit.
+        8. A zero expense amount means no expenses were recorded for that day.
+        9. Do not claim that missing dates had no business activity unless
+           the supplied data explicitly establishes that.
+        10. Do not claim access to records that were not supplied.
+        11. You may identify patterns and compare supplied daily figures,
+            but do not calculate new financial totals or percentages.
+        12. Keep the answer concise and useful.
+
+        Provide a natural-language answer to the user's question.
+        """.formatted(question, dateRange.description(), trendData);
+    }
     private String generateAiAnswer(
             String prompt,
             String fallbackAnswer) {
@@ -854,6 +1342,19 @@ public class AssistantServiceImpl implements AssistantService {
                 || normalized.contains("how much did i invest")
                 || normalized.contains("value of my stock");
     }
+
+    private boolean isDailyFinancialTrendQuestion(String question) {
+
+        return question.contains("daily")
+                || question.contains("day by day")
+                || question.contains("per day")
+                || question.contains("each day")
+                || question.contains("daily trend")
+                || question.contains("sales trend")
+                || question.contains("expense trend")
+                || question.contains("daily performance");
+    }
+
     private DateRange resolveDateRange(String question) {
 
         LocalDate today = LocalDate.now();
@@ -918,9 +1419,7 @@ public class AssistantServiceImpl implements AssistantService {
             data.append("No products currently require restocking.");
         } else {
             for (RestockRecommendationResponse item : recommendations) {
-
                 data.append("\nProduct: ").append(item.productName());
-
                 data.append("\nSKU: ").append(item.sku());
 
                 data.append("\nCurrent stock: ")
@@ -936,16 +1435,14 @@ public class AssistantServiceImpl implements AssistantService {
                         .append(item.recommendedRestockQuantity().toPlainString());
 
                 data.append("\nUnit cost: ")
-                        .append(CurrencyFormatter.format(
-                                item.unitCost(),
-                                item.currency()
-                        ));
+                        .append(item.currency())
+                        .append(" ")
+                        .append(item.unitCost().toPlainString());
 
                 data.append("\nEstimated restock cost: ")
-                        .append(CurrencyFormatter.format(
-                                item.estimatedRestockCost(),
-                                item.currency()
-                        ));
+                        .append(item.currency())
+                        .append(" ")
+                        .append(item.estimatedRestockCost().toPlainString());
 
                 data.append("\n");
             }
@@ -962,14 +1459,11 @@ public class AssistantServiceImpl implements AssistantService {
             1. Never invent products, quantities, or prices.
             2. Never change the supplied numerical values.
             3. Do not calculate or modify restock quantities or costs.
-            4. Preserve the exact formatted monetary amounts supplied.
-            5. Do not remove currency symbols or thousands separators.
-            6. Use the supplied currency for every monetary amount.
-            7. Explain the recommended restock quantities clearly.
-            8. If no products are listed, say no restocking is currently recommended.
-            9. Do not claim that a purchase order has been created or placed.
-            10. Keep the answer concise and practical.
-            11. Never combine amounts from different currencies.
+            4. Use the supplied currency for every monetary amount.
+            5. Explain the recommended restock quantities clearly.
+            6. If no products are listed, say no restocking is currently recommended.
+            7. Do not claim that a purchase order has been created or placed.
+            8. Keep the answer concise and practical.
 
             User's question:
             %s
@@ -980,6 +1474,79 @@ public class AssistantServiceImpl implements AssistantService {
             Provide a natural-language answer.
             """.formatted(question, data);
     }
+
+
+
+    private DateRange resolveTrendDateRange(String question) {
+
+        LocalDate today = LocalDate.now();
+
+        if (question.contains("last week")) {
+            LocalDate thisMonday = today.with(DayOfWeek.MONDAY);
+            LocalDate lastMonday = thisMonday.minusWeeks(1);
+            LocalDate lastSunday = thisMonday.minusDays(1);
+
+            return new DateRange(
+                    lastMonday,
+                    lastSunday,
+                    "from " + lastMonday + " to " + lastSunday
+            );
+        }
+
+        if (question.contains("this week")
+                || question.contains("this week's")
+                || question.contains("weekly")) {
+
+            LocalDate monday = today.with(DayOfWeek.MONDAY);
+
+            return new DateRange(
+                    monday,
+                    today,
+                    "from " + monday + " to " + today
+            );
+        }
+
+        if (question.contains("this month")
+                || question.contains("this month's")
+                || question.contains("monthly")) {
+
+            LocalDate firstDay = today.withDayOfMonth(1);
+
+            return new DateRange(
+                    firstDay,
+                    today,
+                    "from " + firstDay + " to " + today
+            );
+        }
+
+        if (question.contains("yesterday")) {
+            LocalDate yesterday = today.minusDays(1);
+
+            return new DateRange(
+                    yesterday,
+                    yesterday,
+                    "for " + yesterday
+            );
+        }
+
+        if (question.contains("today")) {
+            return new DateRange(
+                    today,
+                    today,
+                    "for " + today
+            );
+        }
+
+        LocalDate startDate = today.minusDays(6);
+
+        return new DateRange(
+                startDate,
+                today,
+                "from " + startDate + " to " + today
+        );
+    }
+
+
     private record DateRange(
             LocalDate startDate,
             LocalDate endDate,
