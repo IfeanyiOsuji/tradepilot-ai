@@ -131,7 +131,7 @@ The responses depend on the records available to the signed-in user and the assi
 
 ## Demo
 
-**3-minute demonstration:** _Add video URL after recording._
+**3-minute demonstration:** https://drive.google.com/file/d/1v2IE2SQczDvmjrCIl7WBuZI1bcTfgkj1/view?usp=sharing
 
 The demo walks through the dashboard, sales and inventory operations, and a natural-language financial comparison.
 
