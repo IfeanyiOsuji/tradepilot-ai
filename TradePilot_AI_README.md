@@ -31,7 +31,23 @@ Small businesses often keep sales, costs, and stock records in disconnected plac
 | Build | Maven Wrapper, npm |
 | Build | Maven Wrapper, npm |
 
-#### frontend github url  https://github.com/IfeanyiOsuji/tradepilot-frontend.git
+
+## Project Repositories
+
+TradePilot AI is a full-stack AI-powered business intelligence platform built with Java, Spring Boot, PostgreSQL, React, and TypeScript.
+
+The project consists of two repositories:
+
+### Backend
+https://github.com/IfeanyiOsuji/tradepilot-ai
+
+Contains the REST APIs, authentication, business logic, financial analytics, inventory management, and AI integration.
+
+### Frontend
+https://github.com/IfeanyiOsuji/tradepilot-frontend
+
+Contains the React user interface, business dashboard, sales and expense management, inventory screens, and AI assistant interface.
+
 ## Architecture
 
 ```text
